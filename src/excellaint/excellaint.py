@@ -30,8 +30,9 @@ which is more congruent with polars and its plugin ecosystem.
 """
 
 def parse_datetime_column(df: pl.DataFrame
-                     ,column_name: str
-                     ) -> pl.DataFrame:
+                         ,column_name: str
+                         ,check_sorted: bool = False
+                         ) -> pl.DataFrame: 
     """
     Parse an excel date column. This will take a column of dates that have been
     mangled by excel, and return a column of dates that are in a clean format.
@@ -42,9 +43,14 @@ def parse_datetime_column(df: pl.DataFrame
     Parameters:
     - df: The dataframe that contains the column you want to parse
     - column_name: The name of the column that you want to parse
+    - check_sorted: Whether to check if the column is sorted. If the column is
+        not sorted, then we will not be able to parse it - since we will not be
+        able to determine the order of the date, month, and year.
 
     Returns:
-    - A new dataframe with the column parsed
+    - A new dataframe with the column parsed, with the datatype converted to a 
+        datetime. You can then choose how to write this back out to a file -
+        either as a datetime, or as a string, etc.
     """
     
     config = ExcellAintConfig.__instance__
