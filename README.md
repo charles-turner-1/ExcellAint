@@ -1,6 +1,7 @@
 # ExcellAint
 ## A Python toolbox for dealing with some of the oddities that Excel can introduce into your dates.
 
+## ** Under Construction : Library may not work as described **
 ___
 
 One of the major issues with trying to import data from Excel into Python is that Excel routinely fucks dates, due to its decision to store dates as floats
