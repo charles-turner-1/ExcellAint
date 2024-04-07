@@ -7,7 +7,6 @@ One of the major issues with trying to import data from Excel into Python is tha
 and then present them in whichever format it is set to. This can lead to all sorts of downstream issues, most commonly (in my experience) the switching of 
 month and day. For example, you might wind up with something like the following:
 
-|------|-------|
 | Date | Very Important Data|
 |------|--------------------|
 | ...  | ...   |
@@ -35,8 +34,14 @@ As such, it is recommended to set up the configuration at the start of your scri
 
 ```python
 import excellaint as ea
+import pandas as pd
 
 ea.config.set_date_format('dd/mm/yyyy')
+
+
+df = pd.read_excel('path/to/excel.xlsx')
+
+df_dates_fixed = ea.parse_datetime_column(df, 'Date')
 ```
 
 In the future, options to use per-call configuration will be added - for now if it needs to change multiple times in a script you will need to set it each time.
