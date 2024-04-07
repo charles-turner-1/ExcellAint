@@ -2,10 +2,8 @@ import datetime
 from pprint import pformat
 from typing import TYPE_CHECKING
 
+import pandas as pd
 import polars as pl
-
-if TYPE_CHECKING:
-    import pandas as pd
 
 """
 Excellaint - A Python toolbox for dealing with some of the oddities that Excel 
@@ -32,7 +30,7 @@ which is more congruent with polars and its plugin ecosystem.
 
 """
 
-def parse_datetime_column(df: pl.DataFrame | "pd.DataFrame"
+def parse_datetime_column(df: pl.DataFrame | pd.DataFrame
                          ,date_column_name: str
                          ,check_sorted: bool = False
                          ) -> pl.DataFrame: 
@@ -69,11 +67,6 @@ def parse_datetime_column(df: pl.DataFrame | "pd.DataFrame"
 
     print(config)
     # Get the column that we want to parse
-
-
-
-
-
 
 
 class ExcellAintConfig():
@@ -121,7 +114,6 @@ class ExcellAintConfig():
     def __str__(self):
         cfg_dict = {
             "mode": self.mode,
-            "target_fmt": self.target_fmt,
             "year": self.year,
             "month": self.month,
             "day": self.day,
@@ -130,11 +122,12 @@ class ExcellAintConfig():
             "second": self.second,
             "date_sep": self.date_sep,
             "time_sep": self.time_sep,
+            "datetime_sep": self.datetime_sep,
             "allow_monthfirst": self.allow_monthfirst,
             "allow_dayfirst": self.allow_dayfirst,
             "allow_yearfirst": self.allow_yearfirst
         }
-        print(f"ExcellAint Configuration:\n\t{pformat(cfg_dict,indent=4)}")
+        return f"ExcellAint Configuration:\n{pformat(cfg_dict,indent=4)}"
 
     def set_mode(self, mode: str) -> None:
         """

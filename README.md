@@ -39,9 +39,7 @@ import pandas as pd
 
 ea.config.set_date_format('dd/mm/yyyy')
 
-
 df = pd.read_excel('path/to/excel.xlsx')
-
 df_dates_fixed = ea.parse_datetime_column(df, 'Date')
 ```
 
