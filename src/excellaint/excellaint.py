@@ -1,8 +1,11 @@
 import datetime
 from pprint import pformat
+from typing import TYPE_CHECKING
 
-import inquirer as inq
 import polars as pl
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 """
 Excellaint - A Python toolbox for dealing with some of the oddities that Excel 
@@ -29,8 +32,8 @@ which is more congruent with polars and its plugin ecosystem.
 
 """
 
-def parse_datetime_column(df: pl.DataFrame
-                         ,column_name: str
+def parse_datetime_column(df: pl.DataFrame | "pd.DataFrame"
+                         ,date_column_name: str
                          ,check_sorted: bool = False
                          ) -> pl.DataFrame: 
     """
@@ -41,7 +44,8 @@ def parse_datetime_column(df: pl.DataFrame
     dates. 
 
     Parameters:
-    - df: The dataframe that contains the column you want to parse
+    - df: The dataframe that contains the column you want to parse. Must be either
+        a polars dataframe or a pandas dataframe.
     - column_name: The name of the column that you want to parse
     - check_sorted: Whether to check if the column is sorted. If the column is
         not sorted, then we will not be able to parse it - since we will not be
@@ -52,6 +56,14 @@ def parse_datetime_column(df: pl.DataFrame
         datetime. You can then choose how to write this back out to a file -
         either as a datetime, or as a string, etc.
     """
+
+    if isinstance(df, pd.DataFrame):
+        df = pl.from_pandas(df)
+    elif not isinstance(df, pl.DataFrame):
+        raise TypeError("df must be either a polars or pandas dataframe")
+
+    if date_column_name not in df.columns:
+        raise ValueError(f"Column {date_column_name} not found in dataframe")
     
     config = ExcellAintConfig.__instance__
 
@@ -69,7 +81,6 @@ class ExcellAintConfig():
 
 
     mode = "date"
-    intended_fmt = "%Y-%m-%d %H:%M:%S"
 
     year = True
     month = True
@@ -85,7 +96,6 @@ class ExcellAintConfig():
     datetime_sep = " " # This is the separator between the date and the time.
     # I'm not sure if this is the best choice of variable name - maybe we should
     # call it `dt_sep` or something like that.
-
 
     # Typically, excel won't bungle the separator - more likely it will just 
     # mess up the order of the date. With that said, if we have an excel driven 
@@ -145,52 +155,9 @@ class ExcellAintConfig():
             self.hour = False
             self.minute = False
             self.second = False
-        
-    def set_intended_format(self
-                           ,fmt: str
-                           ,interactive : bool = False
-                           ) -> None:
-        """
-        Set the target format for the datetime column. This will determine how
-        the datetime column is written out. 
 
-        Parameters:
-        - fmt: The format string to use. This should be a valid format string
-        for the `strftime` function in Python. 
-        """
-
-        # Check that the format string is valid
-        try:
-            datetime.datetime(2010,10,20,13,30,45).strftime(fmt)
-        except ValueError:
-            raise ValueError("Invalid format string")
-
-        self.target_fmt = fmt
-
-    def _set_intended_format_interactive(self):
-        """
-        Use inquirer to set the target format for the datetime column. 
-        This will first prompt the user to select date or datetime, and then
-        prompt the user to select the format string based on . 
-        """
-
-        # First, ask the user to select the mode
-        mode_prompt = inq.List("mode"
-                              ,message="Select mode:"
-                              ,choices=["date","datetime"]
-                              )
-        mode = inq.prompt(mode_prompt)["mode"]
-        self.set_mode(mode)
-
-        # Next, ask the user to select the intended separator - this will be for
-
-        fmt_prompt = inq.Text("fmt"
-                             ,message="Enter the format string for the datetime column"
-                             )
-        fmt = inq.prompt(fmt_prompt)["fmt"]
-        self.set_intended_format(fmt)
-
-    def set_date_fmt_american(self, allowed : bool) -> None:
+    @classmethod
+    def set_date_fmt_american(cls, allowed : bool) -> None:
         """
         If the date is intended to be in an American format, then we will *always* 
         expect the month to come before the day - whether its written as 
@@ -202,6 +169,6 @@ class ExcellAintConfig():
         - allowed: Whether the date can be in an American format.
         """
 
-        self.allow_monthfirst = allowed
-        self.allow_dayfirst = not allowed
-        self.date_sep = "/"
+        cls.allow_monthfirst = allowed
+        cls.allow_dayfirst = not allowed
+        cls.date_sep = "/"
