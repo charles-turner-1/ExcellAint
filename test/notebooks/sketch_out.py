@@ -1,20 +1,24 @@
 import os
-
-import polars.selectors as cs
 import warnings
+
 import pandas as pd
 import polars as pl
+import polars.selectors as cs
+
 import excellaint as ea
 
 ea.config.date_sep = "/"
 ea.config.datetime_sep = " "
+DATETIME_COL = "DATE_STR"
 
 test_file = "/Users/ct6g18/Python/ExcellAint/test/test_data/2_digit_yr.xlsx"
-df = pd.read_excel(test_file)
-
-df["pd_read_dates"] = pd.to_datetime(df["mangled_dates"])
+df = pd.read_excel(test_file).rename(columns={"mangled_dates" : DATETIME_COL})
 
 colnames_init = df.columns.tolist()[:2]
+
+# SPlit datetimes and split dates are very similar but the order we need to drop
+# columns in is different, so we can't combine them for the time being - will 
+# a bit of a refactor first
 
 def split_datetimes(df : pl.DataFrame | pd.DataFrame
                    ,datetime_col : str = "mangled_dates"
@@ -40,7 +44,7 @@ def split_datetimes(df : pl.DataFrame | pd.DataFrame
     return (
         df
         .with_columns(
-            pl.col("mangled_dates").str.split(ea.config.datetime_sep)
+            pl.col(datetime_col).str.split(datetime_sep)
                                     .alias("[date,time]"))
         .explode("[date,time]")
         .with_columns(
@@ -49,22 +53,22 @@ def split_datetimes(df : pl.DataFrame | pd.DataFrame
             .alias("col_nm")
         )
         .pivot(
-            index=['row_id', 'mangled_dates'],
+            index=['row_id',datetime_col],
             values='[date,time]',
             columns='col_nm',
         )
+        .drop(DATETIME_COL)
         .rename(
             {
-                "string_00": "date_str",
+                "string_00": datetime_col,
                 "string_01": "time_str"
             }
         )
     )
 
-# This is just a retread of the above, except now using the datetime splitter
 def split_dates(df : pl.DataFrame | pd.DataFrame
                ,datetime_col : str = "mangled_dates"
-               ,datetime_sep : str = ea.config.datetime_sep
+               ,date_sep : str = ea.config.date_sep
                ) -> pl.DataFrame:
     """
     Type union between pl.Dataframe and pd.DataFrame should be removed.
@@ -86,7 +90,7 @@ def split_dates(df : pl.DataFrame | pd.DataFrame
     return (
         df
         .with_columns(
-            pl.col(datetime_col).str.split(ea.config.date_sep)
+            pl.col(datetime_col).str.split(date_sep)
                                     .alias("[date]"))
         .explode("[date]")
         .with_columns(
@@ -95,12 +99,13 @@ def split_dates(df : pl.DataFrame | pd.DataFrame
             .alias("col_nm")
         )
         .pivot(
-            index=['row_id', 'mangled_dates','Time'],
+            index=['row_id',datetime_col,'Time'],
 # We can make this more robust in the future by working out all the columns other 
 # than the column we want to split
             values='[date]',
             columns='col_nm',
         )
+        .drop(datetime_col)
     )   
 
 def convert_time(df : pl.DataFrame) -> pl.DataFrame:
@@ -258,53 +263,64 @@ def combine_datetime_cols(df : pl.DataFrame) -> pl.DataFrame:
 
     return df
 
+def get_cols_to_process(df : pl.DataFrame
+                       ,colnames_init : list[str]) -> list[str]:
+    """
+    Filter out the columns we want to process for date information
+    """
+    return [col for col in df.select(cs.by_dtype(pl.Utf8)).columns if col not in colnames_init]
 
-%%time
+def create_max_dicts(df : pl.DataFrame
+                    ,cols_to_process : list[str]
+                    ) -> tuple[dict[str,int],dict[str,int]]:
+    """
+    Generates statistics for the columns we want to process: maximum chars (helps 
+    to work our which column is year), maximum value (helps to work out which 
+    column is day)
+    """
+    # This section here needs wrapping up in a function 
 
-df = split_datetimes(df)
+    # First thing to do is get the max character width of them all
+    processing_df = df.select(*cols_to_process)
+
+    max_chars_dict = processing_df.with_columns(
+        [pl.col(colname).str.len_chars().max() for colname in cols_to_process]
+    ).max().to_dict(as_series=False)
+
+    max_chars_dict = {
+        key : val[0] if val else None for key,val in max_chars_dict.items()
+    }
+
+
+    max_val_dict = processing_df.with_columns(
+        [pl.col(colname).cast(pl.Int32).max() for colname in cols_to_process]
+    ).max().to_dict(as_series=False)
+
+    max_val_dict = {
+        key : val[0] if val else None for key,val in max_val_dict.items()
+    }   
+
+    return max_chars_dict,max_val_dict
+
+df = split_datetimes(df,datetime_col=DATETIME_COL)
 df = convert_time(df)
 
-df = split_dates(df,datetime_col="date_str")
+df = split_dates(df,datetime_col=DATETIME_COL)
 
-# This section here needs wrapping up in a function 
-cols_to_process = [col for col in df.select(cs.by_dtype(pl.Utf8)).columns if col not in colnames_init]
-
-for col in cols_to_process:
-    print(col)
-
-# Now we need to get some of the relevant statistics on our columns.
-
-# First thing to do is get the max character width of them all
-processing_df = df.select(*cols_to_process)
-
-max_chars_dict = processing_df.with_columns(
-    [pl.col(colname).str.len_chars().max() for colname in cols_to_process]
-).max().to_dict(as_series=False)
-
-max_chars_dict = {
-    key : val[0] if val else None for key,val in max_chars_dict.items()
-}
-
-
-max_val_dict = processing_df.with_columns(
-    [pl.col(colname).cast(pl.Int32).max() for colname in cols_to_process]
-).max().to_dict(as_series=False)
-
-max_val_dict = {
-    key : val[0] if val else None for key,val in max_val_dict.items()
-}
-
-# Until here
+cols_to_process = get_cols_to_process(df,colnames_init)
+max_chars_dict,max_val_dict = create_max_dicts(df,cols_to_process)
 
 mappings = assign_datetype(cols_to_process,max_chars_dict,max_val_dict)
-df = df.rename(mappings)
-df = df.with_columns(
-    pl.col("Day").cast(pl.Int32),
-    pl.col("Month").cast(pl.Int32),
+
+df = (df.rename(mappings)
+        .with_columns(
+            pl.col("Day").cast(pl.Int32),
+            pl.col("Month").cast(pl.Int32),
+    )
 )
 
 df = year_to_int(df)
 df = combine_date_cols(df)
 df = combine_datetime_cols(df)
 
-df
+print(df)
