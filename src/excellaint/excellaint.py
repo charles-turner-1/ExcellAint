@@ -254,9 +254,9 @@ def assign_datetype(config : 'ExcellAintConfig'
 
     mappings = {str(val) : key for key, val in mappings.items()}
 
-    warnings.warn("Did not use the following arguments: {max_val_dict}, {cols_to_process}."
-                  " We probably need to make this function a bit smarter."
-                  ,stacklevel=2)
+    # warnings.warn("Did not use the following arguments: {max_val_dict}, {cols_to_process}."
+                  # " We probably need to make this function a bit smarter."
+                  # ,stacklevel=2)
 
     return mappings
         
