@@ -25,24 +25,26 @@ The goal of excellaint is to provide some tools which aim to fix these issues.
 
 ## Usage
 
-Currently, excellaint exposes a configuration class, accessible through 
-`excellaint.config`, and a single function: `excellaint.parse_datetime_column`
+Currently, excellaint exposes a single callable parser class, accessible as
+`excellaint.Parser`.
 
-Configuration is global and aims to take as much of the hassle of setting up how
-data ought to be treated out of the function call. It is assumed that generally, the datetime issues excellaint addresses will be common to all excel spreadsheets in a dataset, as they are generally a function of locale.
+Defaults aim to be sane but depending on locale you will probably need to change 
+them. 
 
-As such, it is recommended to set up the configuration at the start of your script, like so:
+Since this project is in its infancy, you are likely to run into errors. Please 
+send the date columns in question to me if/when you run into errors to help 
+improve this package.
+
+The parser class **does not** save any dataframe info, and so you will need to 
+assign the output of the `parse_datetime_column` method to a variable. This 
+also means it is safe to reuse the parser object for multiple dataframes, 
+provided their date columns are (meant to be) in the same format.
+
 
 ```python
-import excellaint as ea
 import pandas as pd
 
-ea.config.date_sep = "/"
-ea.config.datetime_sep = " "
-
-
 test_file = "./test/test_data/2_digit_yr.xlsx"
-
 test_df = pd.read_excel(test_file)
 
 print(test_df)
@@ -64,10 +66,13 @@ print(test_df)
 
 [17544 rows x 2 columns]
 ```
-The package should be relatively performant - future versions will be quite significantly faster as the current approach is not very sophisticated.
 ```python
+
+import excellaint as ea 
+ea_parser = ea.Parser()
+
 %%timeit 
-df = ea.parse_datetime_column(test_df,"mangled_dates")
+df = ea_parser(test_df,"mangled_dates")
 print(df)
 ```
 
@@ -91,10 +96,15 @@ shape: (17_544, 2)
 │ 17543  ┆ 2021-12-31 23:00:00 │
 └────────┴─────────────────────┘
 
-63 ms ± 1.86 ms per loop (mean ± std. dev. of 7 runs, 10 loops each)
+63.7 ms ± 1.14 ms per loop (mean ± std. dev. of 7 runs, 10 loops each)
 ```
 
+The package should be relatively performant - future versions will be quite significantly faster as the current approach is not very sophisticated.
 
-In the future, options to use per-call configuration will be added - for now if it needs to change multiple times in a script you will need to set it each time.
+## Future Work
+
+- [ ] Add more date formats
+- [ ] Add more tests
+- [ ] Performace
 
 
