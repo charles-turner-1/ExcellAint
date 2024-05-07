@@ -80,6 +80,8 @@ class Parser():
         self.allow_dayfirst = allow_dayfirst
         self.allow_yearfirst = allow_yearfirst
 
+        self.index_col = "excellaint_index"
+
     def __str__(self):
         cfg_dict = {
             "mode": self.mode,
@@ -123,7 +125,6 @@ class Parser():
              - either as a datetime, or as a string, etc.
         """
 
-
         if isinstance(df, pd.DataFrame):
             df = pl.from_pandas(df)
         elif not isinstance(df, pl.DataFrame):
@@ -132,12 +133,20 @@ class Parser():
         if date_column not in df.columns:
             raise ValueError(f"Column {date_column} not found in dataframe")
 
+        df = self._add_index(df)
+
         if check_sorted:
-            raise NotImplementedError(" *** UNDER CONSTRUCTION ***")
+            if df[date_column].is_sorted():
+                fix_datetime_sorting = False
+            else:
+                warnings.warn(f"`{date_column}` is not sorted. This will cause problems."
+                             ,category=UserWarning,stacklevel=2)
+                fix_datetime_sorting = True
 
         # Get the column that we want to parse
-        df = self._split_datetimes(df,datetime_col=date_column)
-        df = self._convert_time(df)
+        if self.mode == "datetime":
+            df = self._split_datetimes(df,datetime_col=date_column)
+            df = self._convert_time(df)
 
         df = self._split_dates(df,datetime_col=date_column)
 
@@ -159,6 +168,11 @@ class Parser():
         df = self._year_to_int(df)
         df = self._combine_date_cols(df)
         df = self._combine_datetime_cols(df)
+
+        if fix_datetime_sorting:
+            pass
+
+        df = self._clean_index(df)
 
         return df
 
@@ -215,18 +229,49 @@ class Parser():
                         ,datetime_col : str = "mangled_dates"
                         ) -> pl.DataFrame:
         """
-        Type union between pl.Dataframe and pd.DataFrame should be removed.
+        Splits a datetime string column into separate date and time columns.
 
-        To be honest, I haven't got a particularly good idea as to how this works. I
-        copied it from stackoverflow 
-        (https://stackoverflow.com/questions/73699500/python-polars-split-string-column-into-many-columns-by-delimiter)
-        and it seems to do what I wanted.
+        This function takes a DataFrame and the name of a column containing 
+        datetime strings. It splits the datetime strings at the specified 
+        separator (self.datetime_sep), creating two new columns: one for the 
+        date and one for the time.  The original datetime column is dropped from 
+        the DataFrame.
 
+        The function currently only works on string columns. If the specified 
+        column is not of string type, a NotImplementedError is raised.
+
+        Parameters
+        ----------
+        `df` : pl.DataFrame
+            The DataFrame containing the datetime column to split.
+        `datetime_col` : str, optional
+            The name of the column containing datetime strings to split. 
+            Defaults to "mangled_dates".
+
+        Returns
+        -------
+        `pl.DataFrame`
+            The DataFrame with the datetime column split into separate date and 
+            time columns.
+
+        Raises
+        ------
+        TypeError
+            If df is not a DataFrame.
+        NotImplementedError
+            If the specified column is not of string type.
+
+        Notes
+        -----
+        This function was adapted from a solution found on StackOverflow: 
+        https://stackoverflow.com/questions/73699500/python-polars-split-string-column-into-many-columns-by-delimiter
         """
 
 
         if not isinstance(df, pl.DataFrame):
             raise TypeError("df must be a pandas or polars DataFrame")
+
+        self._check_datetime_col_dtype(df,datetime_col)
 
         return (
             df
@@ -236,11 +281,11 @@ class Parser():
             .explode("[date,time]")
             .with_columns(
                 ("string_" + pl.arange(0, pl.len()).cast(pl.Utf8).str.zfill(2))
-                .over("row_id")
+                .over(self.index_col)
                 .alias("col_nm")
             )
             .pivot(
-                index=['row_id',datetime_col],
+                index=[self.index_col,datetime_col],
                 values='[date,time]',
                 columns='col_nm',
             )
@@ -258,14 +303,45 @@ class Parser():
                     ,datetime_col : str = "mangled_dates"
                     ) -> pl.DataFrame:
         """
-        Type union between pl.Dataframe and pd.DataFrame should be removed.
+        Splits a date string column in a DataFrame into multiple columns.
 
-        To be honest, I haven't got a particularly good idea as to how this works. I
-        copied it from stackoverflow 
-        (https://stackoverflow.com/questions/73699500/python-polars-split-string-column-into-many-columns-by-delimiter)
-        and it seems to do what I wanted.
+        This function takes a DataFrame and a column containing date strings. It
+        splits the date strings into multiple columns using the specified 
+        separator (self.date_sep), and replaces the original date string column 
+        with the new columns. The new columns are named based on their position 
+        in the split string (0, 1, 2, etc.).
 
+        The function first checks the data type of the specified column using 
+        the _check_datetime_col_dtype method. If the data type is not Utf8, a 
+        NotImplementedError is raised.
+
+        The function uses the Polars library's str.split, explode, and pivot 
+        methods to perform the split and reshape the DataFrame.
+
+        Parameters
+        ----------
+        df : pl.DataFrame
+            The DataFrame containing the date string column to split.
+        datetime_col : str, optional
+            The name of the column to split. Defaults to "mangled_dates".
+
+        Returns
+        -------
+        pl.DataFrame
+            The DataFrame with the date string column split into multiple columns.
+
+        Raises
+        ------
+        NotImplementedError
+            If the data type of the column is not Utf8.
+
+        Notes
+        -----
+        The function currently only works with columns of type Utf8.
+        The function was adapted from a solution on StackOverflow: 
+        https://stackoverflow.com/questions/73699500/python-polars-split-string-column-into-many-columns-by-delimiter
         """
+        self._check_datetime_col_dtype(df,datetime_col)
 
         return (
             df
@@ -275,11 +351,11 @@ class Parser():
             .explode("[date]")
             .with_columns(
                 (pl.arange(0, pl.len()))
-                .over("row_id")
+                .over(self.index_col)
                 .alias("col_nm")
             )
             .pivot(
-                index=['row_id',datetime_col,'Time'],
+                index=[self.index_col,datetime_col,'Time'],
     # We can make this more robust in the future by working out all the columns other 
     # than the column we want to split
                 values='[date]',
@@ -292,11 +368,37 @@ class Parser():
                      ,df : pl.DataFrame
                      ) -> pl.DataFrame:
         """
-        Takes the time column and converts it to a time object.
+        Converts a string column in a DataFrame to a time object.
 
-        This is somewhat less ambiguous than splitting dates up, so I'm going to 
-        keep it simple for now so we can resolve the main issue
+        This function takes a DataFrame and a column named "time_str" containing time strings. 
+        It converts the time strings into time objects using the specified format ("%H{self.time_sep}%M"), 
+        and replaces the original "time_str" column with the new "Time" column containing time objects.
+
+        The function currently only works on string columns. If the "time_str" column is not 
+        of string type, a TypeError will be raised by the underlying Polars library.
+
+        Parameters
+        ----------
+        `df` : pl.DataFrame
+            - The DataFrame containing the "time_str" column to convert.
+
+        Returns
+        -------
+        `pl.DataFrame`
+            - The DataFrame with the "time_str" column converted to a "Time" column containing time objects.
+
+        Raises
+        ------
+        `TypeError`
+             - If df is not a DataFrame.
+             - If the "time_str" column is not of string type.
+
+        Notes
+        -----
+        The time format ("%H{self.time_sep}%M") is hardcoded in the function. 
+        This means that the function currently only works with time strings in this specific format.
         """
+
         return (
             df.with_columns(
                 pl.col("time_str")
@@ -498,3 +600,58 @@ class Parser():
         }   
 
         return max_chars_dict,max_val_dict
+
+    def _check_datetime_col_dtype(self
+                                 ,df : pl.DataFrame
+                                 ,datetime_col : str
+                                 ) -> None:
+        """
+        Checks the data type of a specified column in a DataFrame.
+
+        This function checks if the data type of the specified column in the DataFrame is either Datetime or Date. 
+        If it is, a warning is issued. If the data type is not Utf8, a NotImplementedError is raised.
+
+        Parameters
+        ----------
+        `df` : pl.DataFrame
+            The DataFrame containing the column to check.
+        `datetime_col` : str
+            The name of the column to check.
+
+        Raises
+        ------
+        `NotImplementedError`
+            If the data type of the column is not Utf8.
+
+        Notes
+        -----
+        The function currently only works with columns of type Utf8.
+        """
+
+        if df.schema.get(datetime_col) in [pl.Datetime, pl.Date]:
+            warnings.warn(f"Currently only works on string columns, not {df.schema.get(datetime_col)}"
+                          ". TODO. About to fail."
+                         ,stacklevel=2,category=RuntimeWarning)
+
+        if df.schema.get(datetime_col) != pl.Utf8:
+            raise NotImplementedError("Currently only works on string columns"
+                                      f", not {df.schema.get(datetime_col)}. TODO.")
+
+    def _add_index(self
+                  ,df : pl.DataFrame
+                  ) -> pl.DataFrame:
+        """
+        Generate an index column and add it to the dataframe. 
+        """
+
+        return df.with_columns(pl.arange(0, df.shape[0]).alias(self.index_col))
+
+    def _clean_index(self
+                    ,df : pl.DataFrame
+                    ) -> pl.DataFrame:
+        """
+        Clean up the index column
+        """
+
+        return df.drop(self.index_col)
+
