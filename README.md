@@ -105,6 +105,6 @@ The package should be relatively performant - future versions will be quite sign
 
 - [ ] Add more date formats
 - [ ] Add more tests
-- [ ] Performace
+- [ ] Performance++ ?
 
 
